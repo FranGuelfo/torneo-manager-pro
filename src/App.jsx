@@ -14,7 +14,7 @@ function App() {
   const [cargandoAuth, setCargandoAuth] = useState(true);
   const [modoInvitado, setModoInvitado] = useState(false);
 
-  const admins = ["somozaj23@gmail.com", "fran.guelfo@gmail.com"];
+  const admins = import.meta.env.VITE_ADMIN_EMAILS ? import.meta.env.VITE_ADMIN_EMAILS.split(",") : [];
   const esAdmin = user && admins.includes(user.email);
 
   // --- ESTADOS DEL TORNEO ---
