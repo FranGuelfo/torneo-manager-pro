@@ -5,7 +5,9 @@ import {
   updateDoc, query, orderBy, deleteDoc, getDocs,
 } from "firebase/firestore";
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
+
 import Clasificacion from "./components/Clasificacion";
+import ModalPartido from "./components/ModalPartido";
 
 function App() {
   // --- ESTADOS ---
@@ -182,10 +184,6 @@ function App() {
     await updateDoc(doc(db, `torneos/${torneoActivoId}/equipos_participantes`, equipoId), { jugadores: nuevosJugadores });
   };
 
-  const generarSemifinales = async () => { /* ... lógica de semis ... */ };
-  const generarFinal = async () => { /* ... lógica de final ... */ };
-  const finalizarTorneo = async () => { /* ... lógica cierre ... */ };
-
   const goleadoresTorneo = (() => {
     const conteo = {};
     partidos.forEach((p) => p.detallesGoles?.forEach((g) => (conteo[g.jugador] = (conteo[g.jugador] || 0) + 1)));
@@ -317,52 +315,31 @@ function App() {
         </div>
       )}
 
-      {modalPartido && (
-        <div style={modalOverlayStyle}>
-          <div style={modalContentStyle}>
-            <div style={{ textAlign: "center" }}>
-              <h2 style={{fontSize: '40px'}}>{formatearTiempo(segundos)}</h2>
-              {esAdmin && !modalPartido.finalizado && (
-                <div style={{display: 'flex', gap: '10px', justifyContent: 'center'}}>
-                    <button onClick={() => setCorriendo(!corriendo)} style={{background: corriendo ? 'red' : 'green', color: 'white', border: 'none', padding: '10px', borderRadius: '8px'}}>{corriendo ? "PAUSA" : "INICIAR"}</button>
-                    <button onClick={resetCronometro} style={{padding: '10px', borderRadius: '8px', border: '1px solid #ddd'}}>RESET</button>
-                </div>
-              )}
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-around", marginTop: "20px" }}>
-              <div style={{ textAlign: "center", flex: 1 }}>
-                <strong style={{fontSize: '12px'}}>{equiposParticipantes.find((e) => e.id === modalPartido.equipoA)?.nombre}</strong>
-                <div style={{ fontSize: "40px", fontWeight: "bold" }}>{partidos.find(p => p.id === modalPartido.id)?.golesA}</div>
-                {esAdmin && !modalPartido.finalizado && equiposParticipantes.find((e) => e.id === modalPartido.equipoA)?.jugadores.map((j) => (
-                  <button key={j.nombre} onClick={() => anotarGolDirecto(modalPartido.id, j.nombre, modalPartido.equipoA)} style={{ display: "block", width: "100%", fontSize: "10px", marginBottom: "2px" }}>{j.nombre}</button>
-                ))}
-              </div>
-              <div style={{alignSelf: 'center'}}>VS</div>
-              <div style={{ textAlign: "center", flex: 1 }}>
-                <strong style={{fontSize: '12px'}}>{equiposParticipantes.find((e) => e.id === modalPartido.equipoB)?.nombre}</strong>
-                <div style={{ fontSize: "40px", fontWeight: "bold" }}>{partidos.find(p => p.id === modalPartido.id)?.golesB}</div>
-                {esAdmin && !modalPartido.finalizado && equiposParticipantes.find((e) => e.id === modalPartido.equipoB)?.jugadores.map((j) => (
-                  <button key={j.nombre} onClick={() => anotarGolDirecto(modalPartido.id, j.nombre, modalPartido.equipoB)} style={{ display: "block", width: "100%", fontSize: "10px", marginBottom: "2px" }}>{j.nombre}</button>
-                ))}
-              </div>
-            </div>
-            <button onClick={() => setModalPartido(null)} style={{ ...mainBtnStyle, background: "#333", marginTop: "20px" }}>CERRAR</button>
-          </div>
-        </div>
-      )}
+      {/* --- EL NUEVO MODAL LLAMADO DESDE COMPONENTE --- */}
+      <ModalPartido 
+        partido={partidos.find(p => p.id === modalPartido?.id)} 
+        equipos={equiposParticipantes}
+        esAdmin={esAdmin}
+        segundos={segundos}
+        corriendo={corriendo}
+        setCorriendo={setCorriendo}
+        resetCronometro={resetCronometro}
+        formatearTiempo={formatearTiempo}
+        anotarGolDirecto={anotarGolDirecto}
+        finalizarPartidoManual={finalizarPartidoManual}
+        cerrarModal={() => { setModalPartido(null); setCorriendo(false); }}
+      />
     </div>
   );
 }
 
-// ESTILOS (Al final del archivo)
+// ESTILOS
 const cardStyle = { background: "#fff", padding: "15px", borderRadius: "12px", marginBottom: "10px", display: "flex", alignItems: "center", boxShadow: "0 2px 4px rgba(0,0,0,0.05)", cursor: "pointer" };
 const formCardStyle = { background: "#fff", padding: "15px", borderRadius: "12px", marginBottom: "15px" };
 const inputStyle = { width: "100%", padding: "10px", marginBottom: "10px", borderRadius: "8px", border: "1px solid #ddd", boxSizing: "border-box" };
 const mainBtnStyle = { width: "100%", padding: "12px", borderRadius: "8px", border: "none", color: "#fff", fontWeight: "bold", cursor: "pointer" };
 const backBtnStyle = { background: "none", border: "none", color: "#1a73e8", fontWeight: "bold", cursor: "pointer" };
 const deleteIconStyle = { background: "none", border: "none", cursor: "pointer", fontSize: '18px' };
-const modalOverlayStyle = { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 };
-const modalContentStyle = { background: "#fff", padding: "20px", borderRadius: "20px", width: "90%", maxWidth: "400px" };
 const matchCardStyle = (tipo) => ({ background: "#fff", padding: "12px", borderRadius: "12px", marginBottom: "10px", border: tipo === "final" ? "2px solid #ffd700" : "1px solid #eee", cursor: "pointer", boxShadow: "0 2px 4px rgba(0,0,0,0.05)" });
 
 export default App;
