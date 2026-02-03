@@ -25,22 +25,30 @@ const Clasificacion = ({ equipos, partidos }) => {
     <div style={{ marginBottom: "20px" }}>
       {titulo && <h4 style={{ margin: "10px 0", color: "#1a73e8", fontSize: "14px" }}>{titulo}</h4>}
       <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: "100%", fontSize: "12px", borderCollapse: 'collapse' }}>
+        <table style={{ width: "100%", fontSize: "12px", borderCollapse: 'collapse', color: '#333' }}>
           <thead>
             <tr style={{ color: "#888", borderBottom: '1px solid #eee' }}>
               <th style={{ textAlign: 'left', padding: '5px' }}>EQ</th>
-              <th style={{ textAlign: 'center' }}>PTS</th>
-              <th style={{ textAlign: 'center' }}>GF</th>
-              <th style={{ textAlign: 'center' }}>DG</th>
+              <th style={{ textAlign: 'center', color: '#333' }}>PTS</th>
+              <th style={{ textAlign: 'center', color: '#333' }}>GF</th>
+              <th style={{ textAlign: 'center', color: '#333' }}>DG</th>
             </tr>
           </thead>
           <tbody>
             {lista.map((eq) => (
               <tr key={eq.id} style={{ borderBottom: '1px solid #f9f9f9' }}>
-                <td style={{ borderLeft: `4px solid ${eq.color}`, padding: "8px 5px", fontWeight: 'bold' }}>{eq.nombre}</td>
-                <td style={{ textAlign: "center", fontWeight: 'bold' }}>{eq.pts}</td>
-                <td style={{ textAlign: "center" }}>{eq.gf}</td>
-                <td style={{ textAlign: "center", color: eq.dg > 0 ? 'green' : eq.dg < 0 ? 'red' : '#333' }}>
+                <td style={{ 
+                  borderLeft: `4px solid ${eq.color}`, 
+                  padding: "8px 5px", 
+                  fontWeight: 'bold', 
+                  color: eq.color === '#ffffff' || eq.color === 'white' ? '#333' : eq.color,
+                  WebkitTextFillColor: eq.color === '#ffffff' || eq.color === 'white' ? '#333' : eq.color
+                }}>
+                  {eq.nombre}
+                </td>
+                <td style={{ textAlign: "center", fontWeight: 'bold', color: '#333' }}>{eq.pts}</td>
+                <td style={{ textAlign: "center", color: '#333' }}>{eq.gf}</td>
+                <td style={{ textAlign: "center", fontWeight: 'bold', color: eq.dg > 0 ? 'green' : eq.dg < 0 ? 'red' : '#333' }}>
                   {eq.dg > 0 ? `+${eq.dg}` : eq.dg}
                 </td>
               </tr>
@@ -53,7 +61,7 @@ const Clasificacion = ({ equipos, partidos }) => {
 
   return (
     <div style={{ background: "#fff", padding: "15px", borderRadius: "12px", marginBottom: "15px" }}>
-      <h3 style={{ marginTop: 0 }}>📊 Clasificación</h3>
+      <h3 style={{ marginTop: 0, color: '#333' }}>📊 Clasificación</h3>
       {gruposExistentes.length > 0 ? (
         gruposExistentes.map(g => renderTabla(obtenerEstadisticas(equipos.filter(e => e.grupo === g)), `Grupo ${g}`))
       ) : (
