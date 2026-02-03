@@ -128,13 +128,13 @@ function App() {
 
   const manejarCreacionTorneo = async (datos) => {
     if (!esAdmin) return;
-    const { nombreTorneo, fechaTorneo, horaTorneo, lugarTorneo, tiemposForm, equiposForm } = datos;
+    const { nombreTorneo, fechaTorneo, horaTorneo, lugarTorneo, tiemposForm, equiposForm, idaYVuelta } = datos;
     const n = equiposForm.length;
 
     const torneoRef = await addDoc(collection(db, "torneos"), {
       nombre: nombreTorneo, fecha: fechaTorneo, hora: horaTorneo, lugar: lugarTorneo,
       estado: "liguilla", campeon: "", tiempos: tiemposForm, iniciado: false,
-      numEquipos: n
+      numEquipos: n, idaYVuelta: idaYVuelta || false
     });
 
     const usarGrupos = (n === 6 || n === 8);
@@ -157,18 +157,91 @@ function App() {
           ((i < mitad && j < mitad) || (i >= mitad && j >= mitad)) : true;
 
         if (mismoGrupo) {
+          // IDA
           await addDoc(collection(db, `torneos/${torneoRef.id}/partidos`), {
-            equipoA: equiposForm[i].id,
-            equipoB: equiposForm[j].id,
-            golesA: 0, golesB: 0,
-            detallesGoles: [], orden: orden++,
-            tipo: "liguilla", finalizado: false
+            equipoA: equiposForm[i].id, equipoB: equiposForm[j].id, golesA: 0, golesB: 0,
+            detallesGoles: [], orden: orden++, tipo: "liguilla", finalizado: false,
+            nombrePartido: idaYVuelta ? "LIGUILLA (IDA)" : "LIGUILLA"
           });
+          // VUELTA
+          if (idaYVuelta) {
+            await addDoc(collection(db, `torneos/${torneoRef.id}/partidos`), {
+              equipoA: equiposForm[j].id, equipoB: equiposForm[i].id, golesA: 0, golesB: 0,
+              detallesGoles: [], orden: orden++, tipo: "liguilla", finalizado: false,
+              nombrePartido: "LIGUILLA (VUELTA)"
+            });
+          }
         }
       }
     }
     setTorneoActivoId(torneoRef.id);
     setVista("torneo_en_curso");
+  };
+
+  const generarFaseFinal = async () => {
+    const liguillaFinalizada = partidos.filter(p => p.tipo === "liguilla").every(p => p.finalizado);
+    if (!liguillaFinalizada) return alert("Primero termina todos los partidos de liguilla.");
+    if (!window.confirm("¿Generar cruces de fase final?")) return;
+
+    const n = equiposParticipantes.length;
+    const usarGrupos = (n === 6 || n === 8);
+
+    const obtenerRanking = (lista) => {
+      return lista.map(eq => {
+        let pts = 0, dg = 0;
+        partidos.filter(p => p.tipo === "liguilla" && p.finalizado && (p.equipoA === eq.id || p.equipoB === eq.id))
+          .forEach(p => {
+            const soyA = p.equipoA === eq.id;
+            const mG = soyA ? p.golesA : p.golesB;
+            const sG = soyA ? p.golesB : p.golesA;
+            dg += (mG - sG);
+            if (mG > sG) pts += 3; else if (mG === sG) pts += 1;
+          });
+        return { ...eq, pts, dg };
+      }).sort((a, b) => b.pts - a.pts || b.dg - a.dg);
+    };
+
+    if (usarGrupos) {
+      const rankA = obtenerRanking(equiposParticipantes.filter(e => e.grupo === "A"));
+      const rankB = obtenerRanking(equiposParticipantes.filter(e => e.grupo === "B"));
+
+      // Semis
+      const semis = [
+        { a: rankA[0], b: rankB[1], n: "Semifinal 1 (1ºA vs 2ºB)" },
+        { a: rankB[0], b: rankA[1], n: "Semifinal 2 (1ºB vs 2ºA)" }
+      ];
+      for (let s of semis) {
+        await addDoc(collection(db, `torneos/${torneoActivoId}/partidos`), {
+          equipoA: s.a.id, equipoB: s.b.id, golesA: 0, golesB: 0, detallesGoles: [], orden: 100, tipo: "semifinal", finalizado: false, nombrePartido: s.n
+        });
+      }
+      // 5º Puesto
+      await addDoc(collection(db, `torneos/${torneoActivoId}/partidos`), {
+        equipoA: rankA[2].id, equipoB: rankB[2].id, golesA: 0, golesB: 0, detallesGoles: [], orden: 99, tipo: "liguilla", finalizado: false, nombrePartido: "5º y 6º PUESTO"
+      });
+    } else {
+      const rank = obtenerRanking(equiposParticipantes);
+      await addDoc(collection(db, `torneos/${torneoActivoId}/partidos`), {
+        equipoA: rank[0].id, equipoB: rank[1].id, golesA: 0, golesB: 0, detallesGoles: [], orden: 110, tipo: "final", finalizado: false, nombrePartido: "GRAN FINAL"
+      });
+    }
+    alert("Cruces generados.");
+  };
+
+  const generarGranFinal = async () => {
+    const semis = partidos.filter(p => p.tipo === "semifinal");
+    if (semis.length < 2 || !semis.every(p => p.finalizado)) return alert("Las semifinales deben terminar primero.");
+    
+    const ganadores = semis.map(p => p.golesA > p.golesB ? p.equipoA : p.equipoB);
+    const perdedores = semis.map(p => p.golesA > p.golesB ? p.equipoB : p.equipoA);
+
+    await addDoc(collection(db, `torneos/${torneoActivoId}/partidos`), {
+      equipoA: ganadores[0], equipoB: ganadores[1], golesA: 0, golesB: 0, detallesGoles: [], orden: 120, tipo: "final", finalizado: false, nombrePartido: "GRAN FINAL"
+    });
+    await addDoc(collection(db, `torneos/${torneoActivoId}/partidos`), {
+      equipoA: perdedores[0], equipoB: perdedores[1], golesA: 0, golesB: 0, detallesGoles: [], orden: 115, tipo: "final", finalizado: false, nombrePartido: "3er y 4º PUESTO"
+    });
+    alert("¡Final y 3er puesto listos!");
   };
 
   const actualizarDatosTorneo = async (campo, valor) => {
@@ -247,9 +320,9 @@ function App() {
               {p.finalizado && <span style={{ color: "green", fontWeight: "bold" }}>FINALIZADO</span>}
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ flex: 1, fontSize: '13px' }}>{equiposParticipantes.find((e) => e.id === p.equipoA)?.nombre}</span>
+              <span style={{ flex: 1, fontSize: '13px', fontWeight: 'bold' }}>{equiposParticipantes.find((e) => e.id === p.equipoA)?.nombre}</span>
               <span style={{ background: "#333", color: "#fff", padding: "4px 12px", borderRadius: "8px", fontWeight: "bold" }}>{p.golesA} - {p.golesB}</span>
-              <span style={{ flex: 1, textAlign: "right", fontSize: '13px' }}>{equiposParticipantes.find((e) => e.id === p.equipoB)?.nombre}</span>
+              <span style={{ flex: 1, textAlign: "right", fontSize: '13px', fontWeight: 'bold' }}>{equiposParticipantes.find((e) => e.id === p.equipoB)?.nombre}</span>
             </div>
           </div>
         ))}
@@ -337,10 +410,13 @@ function App() {
               <input type="date" value={datosTorneo.fecha || ""} onChange={(e) => actualizarDatosTorneo("fecha", e.target.value)} style={inputStyle} />
               <input type="time" value={datosTorneo.hora || ""} onChange={(e) => actualizarDatosTorneo("hora", e.target.value)} style={inputStyle} />
               <input value={datosTorneo.lugar || ""} onChange={(e) => actualizarDatosTorneo("lugar", e.target.value)} style={inputStyle} placeholder="Lugar" />
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={generarFaseFinal} style={{ ...mainBtnStyle, background: '#f39c12', flex: 1 }}>⚡ SEMIS / FINAL</button>
+                <button onClick={generarGranFinal} style={{ ...mainBtnStyle, background: '#9b59b6', flex: 1 }}>🏆 GENERAR FINAL</button>
+              </div>
             </div>
           )}
 
-          {/* SECCIÓN ACTUALIZADA: JUGADORES Y PAGOS */}
           <div style={formCardStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
               <h3 style={{ margin: 0 }}>👥 Plantillas y Pagos</h3>

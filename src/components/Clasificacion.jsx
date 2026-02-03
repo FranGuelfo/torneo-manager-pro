@@ -1,7 +1,6 @@
 import React from "react";
 
 const Clasificacion = ({ equipos, partidos }) => {
-  // Función interna para calcular las estadísticas de un set de equipos
   const obtenerEstadisticas = (listaEquipos) => {
     return listaEquipos.map((eq) => {
       let pts = 0, gf = 0, gc = 0;
@@ -20,7 +19,6 @@ const Clasificacion = ({ equipos, partidos }) => {
     }).sort((a, b) => b.pts - a.pts || b.dg - a.dg);
   };
 
-  // Detectar si hay grupos (A y B)
   const gruposExistentes = [...new Set(equipos.map(e => e.grupo))].filter(Boolean).sort();
 
   const renderTabla = (lista, titulo) => (
@@ -31,7 +29,9 @@ const Clasificacion = ({ equipos, partidos }) => {
           <thead>
             <tr style={{ color: "#888", borderBottom: '1px solid #eee' }}>
               <th style={{ textAlign: 'left', padding: '5px' }}>EQ</th>
-              <th>PTS</th><th>GF</th><th>DG</th>
+              <th style={{ textAlign: 'center' }}>PTS</th>
+              <th style={{ textAlign: 'center' }}>GF</th>
+              <th style={{ textAlign: 'center' }}>DG</th>
             </tr>
           </thead>
           <tbody>
@@ -40,7 +40,9 @@ const Clasificacion = ({ equipos, partidos }) => {
                 <td style={{ borderLeft: `4px solid ${eq.color}`, padding: "8px 5px", fontWeight: 'bold' }}>{eq.nombre}</td>
                 <td style={{ textAlign: "center", fontWeight: 'bold' }}>{eq.pts}</td>
                 <td style={{ textAlign: "center" }}>{eq.gf}</td>
-                <td style={{ textAlign: "center", color: eq.dg > 0 ? 'green' : eq.dg < 0 ? 'red' : '#333' }}>{eq.dg}</td>
+                <td style={{ textAlign: "center", color: eq.dg > 0 ? 'green' : eq.dg < 0 ? 'red' : '#333' }}>
+                  {eq.dg > 0 ? `+${eq.dg}` : eq.dg}
+                </td>
               </tr>
             ))}
           </tbody>

@@ -5,6 +5,7 @@ const CrearTorneo = ({ alCrear, alCancelar, mainBtnStyle, inputStyle, formCardSt
   const [fechaTorneo, setFechaTorneo] = useState(new Date().toISOString().split("T")[0]);
   const [horaTorneo, setHoraTorneo] = useState("20:00");
   const [lugarTorneo, setLugarTorneo] = useState("");
+  const [idaYVuelta, setIdaYVuelta] = useState(false);
   const [tiemposForm, setTiemposForm] = useState({ liguilla: 10, semifinal: 12, final: 15 });
   const [equiposForm, setEquiposForm] = useState([
     { id: "1", nombre: "Equipo 1", color: "#ff4444" },
@@ -30,8 +31,7 @@ const CrearTorneo = ({ alCrear, alCancelar, mainBtnStyle, inputStyle, formCardSt
 
   const enviar = (e) => {
     e.preventDefault();
-    // No enviamos 'jugadores' aquí, se gestionan en la pantalla de torneo activo
-    alCrear({ nombreTorneo, fechaTorneo, horaTorneo, lugarTorneo, tiemposForm, equiposForm });
+    alCrear({ nombreTorneo, fechaTorneo, horaTorneo, lugarTorneo, tiemposForm, equiposForm, idaYVuelta });
   };
 
   return (
@@ -53,6 +53,19 @@ const CrearTorneo = ({ alCrear, alCancelar, mainBtnStyle, inputStyle, formCardSt
         </div>
 
         <div style={formCardStyle}>
+          <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '10px' }}>
+            <input 
+              type="checkbox" 
+              checked={idaYVuelta} 
+              onChange={(e) => setIdaYVuelta(e.target.checked)} 
+              style={{ width: '20px', height: '20px' }}
+            />
+            <span style={{ fontWeight: 'bold', fontSize: '14px' }}>¿Formato Ida y Vuelta? 🔄</span>
+          </label>
+          <p style={{ fontSize: '11px', color: '#888', margin: '5px 0 0 30px' }}>Se jugarán dos partidos contra cada rival del grupo.</p>
+        </div>
+
+        <div style={formCardStyle}>
           <label style={labelStyle}>Duración Partidos (minutos)</label>
           <div style={{ display: 'flex', gap: '10px' }}>
             <div style={{ flex: 1 }}><small>Liguilla</small><input type="number" value={tiemposForm.liguilla} onChange={(e) => setTiemposForm({ ...tiemposForm, liguilla: e.target.value })} style={inputStyle} /></div>
@@ -63,7 +76,6 @@ const CrearTorneo = ({ alCrear, alCancelar, mainBtnStyle, inputStyle, formCardSt
 
         <div style={formCardStyle}>
           <label style={labelStyle}>Equipos ({equiposForm.length})</label>
-          <p style={{ fontSize: '11px', color: '#888', marginTop: '-10px', marginBottom: '10px' }}>* El sistema creará grupos si seleccionas 6 u 8 equipos.</p>
           {equiposForm.map((eq) => (
             <div key={eq.id} style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
               <input type="color" value={eq.color} onChange={(e) => manejarCambioEquipo(eq.id, 'color', e.target.value)} style={{ width: '40px', height: '38px', border: 'none', padding: 0, background: 'none', cursor: 'pointer' }} />
