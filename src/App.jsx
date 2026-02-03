@@ -31,6 +31,7 @@ function App() {
   const [modalPartido, setModalPartido] = useState(null);
   const [historial, setHistorial] = useState([]);
   const [rankingHistorico, setRankingHistorico] = useState([]);
+  const [campeonSeleccionado, setCampeonSeleccionado] = useState(""); // <--- NUEVO
 
   // --- ESTADOS DEL CRONÓMETRO ---
   const [segundos, setSegundos] = useState(0);
@@ -126,6 +127,20 @@ function App() {
     return `${mins}:${segs < 10 ? "0" : ""}${segs}`;
   };
 
+  const finalizarTorneoCompleto = async () => {
+    if (!esAdmin || !torneoActivoId) return;
+    if (!campeonSeleccionado) return alert("Selecciona quién ganó el torneo.");
+    
+    if (window.confirm(`¿Cerrar el torneo y proclamar campeón a ${campeonSeleccionado}?`)) {
+      await updateDoc(doc(db, "torneos", torneoActivoId), {
+        estado: "finalizado",
+        campeon: campeonSeleccionado
+      });
+      alert("¡Torneo cerrado oficialmente!");
+      setVista("menu");
+    }
+  };
+
   const manejarCreacionTorneo = async (datos) => {
     if (!esAdmin) return;
     const { nombreTorneo, fechaTorneo, horaTorneo, lugarTorneo, tiemposForm, equiposForm, idaYVuelta } = datos;
@@ -157,13 +172,11 @@ function App() {
           ((i < mitad && j < mitad) || (i >= mitad && j >= mitad)) : true;
 
         if (mismoGrupo) {
-          // IDA
           await addDoc(collection(db, `torneos/${torneoRef.id}/partidos`), {
             equipoA: equiposForm[i].id, equipoB: equiposForm[j].id, golesA: 0, golesB: 0,
             detallesGoles: [], orden: orden++, tipo: "liguilla", finalizado: false,
             nombrePartido: idaYVuelta ? "LIGUILLA (IDA)" : "LIGUILLA"
           });
-          // VUELTA
           if (idaYVuelta) {
             await addDoc(collection(db, `torneos/${torneoRef.id}/partidos`), {
               equipoA: equiposForm[j].id, equipoB: equiposForm[i].id, golesA: 0, golesB: 0,
@@ -204,8 +217,6 @@ function App() {
     if (usarGrupos) {
       const rankA = obtenerRanking(equiposParticipantes.filter(e => e.grupo === "A"));
       const rankB = obtenerRanking(equiposParticipantes.filter(e => e.grupo === "B"));
-
-      // Semis
       const semis = [
         { a: rankA[0], b: rankB[1], n: "Semifinal 1 (1ºA vs 2ºB)" },
         { a: rankB[0], b: rankA[1], n: "Semifinal 2 (1ºB vs 2ºA)" }
@@ -215,7 +226,6 @@ function App() {
           equipoA: s.a.id, equipoB: s.b.id, golesA: 0, golesB: 0, detallesGoles: [], orden: 100, tipo: "semifinal", finalizado: false, nombrePartido: s.n
         });
       }
-      // 5º Puesto
       await addDoc(collection(db, `torneos/${torneoActivoId}/partidos`), {
         equipoA: rankA[2].id, equipoB: rankB[2].id, golesA: 0, golesB: 0, detallesGoles: [], orden: 99, tipo: "liguilla", finalizado: false, nombrePartido: "5º y 6º PUESTO"
       });
@@ -231,7 +241,6 @@ function App() {
   const generarGranFinal = async () => {
     const semis = partidos.filter(p => p.tipo === "semifinal");
     if (semis.length < 2 || !semis.every(p => p.finalizado)) return alert("Las semifinales deben terminar primero.");
-    
     const ganadores = semis.map(p => p.golesA > p.golesB ? p.equipoA : p.equipoB);
     const perdedores = semis.map(p => p.golesA > p.golesB ? p.equipoB : p.equipoA);
 
@@ -404,16 +413,41 @@ function App() {
         <div>
           <button onClick={() => setVista("menu")} style={backBtnStyle}>← Volver</button>
 
-          {esAdmin && (
+          {/* TARJETA DE CAMPEÓN */}
+          {datosTorneo.estado === "finalizado" && (
+            <div style={{ ...formCardStyle, textAlign: 'center', border: '3px solid #d4af37' }}>
+              <h1 style={{ margin: '0', fontSize: '40px' }}>🏆</h1>
+              <h2 style={{ color: '#d4af37', marginTop: '0' }}>CAMPEÓN</h2>
+              <h1 style={{ margin: '0', textTransform: 'uppercase' }}>{datosTorneo.campeon}</h1>
+            </div>
+          )}
+
+          {esAdmin && datosTorneo.estado !== "finalizado" && (
             <div style={{ ...formCardStyle, background: "#fff3e0" }}>
               <h3 style={{ marginTop: 0 }}>⚙️ Datos del Evento</h3>
               <input type="date" value={datosTorneo.fecha || ""} onChange={(e) => actualizarDatosTorneo("fecha", e.target.value)} style={inputStyle} />
               <input type="time" value={datosTorneo.hora || ""} onChange={(e) => actualizarDatosTorneo("hora", e.target.value)} style={inputStyle} />
               <input value={datosTorneo.lugar || ""} onChange={(e) => actualizarDatosTorneo("lugar", e.target.value)} style={inputStyle} placeholder="Lugar" />
               <div style={{ display: 'flex', gap: '10px' }}>
-                <button onClick={generarFaseFinal} style={{ ...mainBtnStyle, background: '#f39c12', flex: 1 }}>⚡ SEMIS / FINAL</button>
-                <button onClick={generarGranFinal} style={{ ...mainBtnStyle, background: '#9b59b6', flex: 1 }}>🏆 GENERAR FINAL</button>
+                <button onClick={generarFaseFinal} style={{ ...mainBtnStyle, background: '#f39c12', flex: 1, fontSize: '12px' }}>⚡ SEMIS</button>
+                <button onClick={generarGranFinal} style={{ ...mainBtnStyle, background: '#9b59b6', flex: 1, fontSize: '12px' }}>🏆 FINAL</button>
               </div>
+
+              {/* BOTÓN PARA CERRAR TORNEO DEFINITIVAMENTE */}
+              {partidos.some(p => p.tipo === "final" && p.finalizado) && (
+                <div style={{ marginTop: '15px', paddingTop: '10px', borderTop: '1px dashed #e67e22' }}>
+                  <label style={{ fontSize: '11px', fontWeight: 'bold' }}>PROCLAMAR GANADOR:</label>
+                  <select 
+                    value={campeonSeleccionado} 
+                    onChange={(e) => setCampeonSeleccionado(e.target.value)}
+                    style={{ ...inputStyle, marginTop: '5px' }}
+                  >
+                    <option value="">-- Seleccionar --</option>
+                    {equiposParticipantes.map(eq => <option key={eq.id} value={eq.nombre}>{eq.nombre}</option>)}
+                  </select>
+                  <button onClick={finalizarTorneoCompleto} style={{ ...mainBtnStyle, background: '#27ae60' }}>🔒 FINALIZAR TORNEO</button>
+                </div>
+              )}
             </div>
           )}
 
@@ -428,7 +462,7 @@ function App() {
               <div key={eq.id} style={{ marginBottom: '15px', paddingBottom: '10px', borderBottom: '1px solid #eee' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                   <strong style={{ color: eq.color }}>{eq.nombre} {eq.grupo ? `(Gr. ${eq.grupo})` : ''}</strong>
-                  {esAdmin && (
+                  {esAdmin && datosTorneo.estado !== "finalizado" && (
                     <button onClick={() => { const n = prompt("Nombre:"); if(n) añadirJugador(eq.id, n); }} style={{ fontSize: '10px', padding: '2px 8px' }}>+ Jugador</button>
                   )}
                 </div>
@@ -436,10 +470,11 @@ function App() {
                   <div key={i} style={{ display: "flex", justifyContent: "space-between", margin: "5px 0", alignItems: 'center', background: '#f9f9f9', padding: '5px', borderRadius: '5px' }}>
                     <span style={{ fontSize: "13px" }}>
                       {j.nombre}
-                      {esAdmin && <button onClick={() => eliminarJugador(eq.id, i)} style={{ border: 'none', background: 'none', color: 'red', marginLeft: '5px' }}>×</button>}
+                      {esAdmin && datosTorneo.estado !== "finalizado" && <button onClick={() => eliminarJugador(eq.id, i)} style={{ border: 'none', background: 'none', color: 'red', marginLeft: '5px' }}>×</button>}
                     </span>
                     <button
                       onClick={() => togglePagoRealtime(eq.id, i)}
+                      disabled={!esAdmin}
                       style={{ background: j.pagado ? "#34a853" : "#d93025", color: "white", border: "none", borderRadius: "12px", padding: "4px 10px", fontSize: "10px", fontWeight: 'bold', minWidth: '85px' }}
                     >
                       {j.pagado ? "✅ PAGADO" : "❌ PENDIENTE"}
@@ -467,7 +502,7 @@ function App() {
         <ModalPartido
           partido={partidos.find(p => p.id === modalPartido?.id)}
           equipos={equiposParticipantes}
-          esAdmin={esAdmin}
+          esAdmin={esAdmin && datosTorneo.estado !== "finalizado"}
           segundos={segundos}
           corriendo={corriendo}
           setCorriendo={setCorriendo}
