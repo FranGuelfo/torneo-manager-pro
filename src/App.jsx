@@ -30,13 +30,10 @@ function App() {
   const [modalPartido, setModalPartido] = useState(null);
   const [historial, setHistorial] = useState([]);
   const [rankingHistorico, setRankingHistorico] = useState([]);
-  const [campeonSeleccionado, setCampeonSeleccionado] = useState("");
 
   const [segundos, setSegundos] = useState(0);
   const [corriendo, setCorriendo] = useState(false);
-  const [silbatoTocado, setSilbatoTocado] = useState(false);
   const timerRef = useRef(null);
-  const audioRef = useRef(null);
 
   // --- EFFECTS ---
   useEffect(() => {
@@ -66,16 +63,42 @@ function App() {
     }
   }, [torneoActivoId]);
 
-  // --- FUNCIONES DE MEZCLA Y LÓGICA ---
-  const mezclarArray = (array) => {
-    const nuevoArray = [...array];
-    for (let i = nuevoArray.length - 1; i > 0; i--) {
+  // --- LÓGICA DE DESCANSO EQUITATIVO ---
+  const mezclarConDescanso = (lista) => {
+    let copia = [...lista];
+    // Mezcla inicial aleatoria
+    for (let i = copia.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [nuevoArray[i], nuevoArray[j]] = [nuevoArray[j], nuevoArray[i]];
+      [copia[i], copia[j]] = [copia[j], copia[i]];
     }
-    return nuevoArray;
+
+    let resultado = [];
+    while (copia.length > 0) {
+      let ultimo = resultado[resultado.length - 1];
+      let indiceEncontrado = -1;
+
+      for (let i = 0; i < copia.length; i++) {
+        const p = copia[i];
+        const coincidencia = ultimo && (
+          p.equipoA === ultimo.equipoA || p.equipoA === ultimo.equipoB || 
+          p.equipoB === ultimo.equipoA || p.equipoB === ultimo.equipoB
+        );
+        if (!coincidencia) {
+          indiceEncontrado = i;
+          break;
+        }
+      }
+
+      if (indiceEncontrado !== -1) {
+        resultado.push(copia.splice(indiceEncontrado, 1)[0]);
+      } else {
+        resultado.push(copia.splice(0, 1)[0]);
+      }
+    }
+    return resultado;
   };
 
+  // --- FUNCIONES DE ACCIÓN ---
   const manejarLogin = async (e) => {
     e.preventDefault();
     try { await signInWithEmailAndPassword(auth, email, password); setVista("menu"); }
@@ -84,102 +107,64 @@ function App() {
 
   const cerrarSesion = () => { signOut(auth); setModoInvitado(false); setVista("menu"); };
 
-  const resetCronometro = () => { setCorriendo(false); setSegundos(0); setSilbatoTocado(false); };
+  const resetCronometro = () => { setCorriendo(false); setSegundos(0); };
   const formatearTiempo = (s) => {
     const mins = Math.floor(s / 60);
     const segs = s % 60;
     return `${mins}:${segs < 10 ? "0" : ""}${segs}`;
   };
 
-  // --- EDICIÓN Y REGENERACIÓN ---
   const actualizarEquipo = async (equipoId, nuevoNombre, nuevoColor) => {
     if (!esAdmin) return;
     await updateDoc(doc(db, `torneos/${torneoActivoId}/equipos_participantes`, equipoId), {
-      nombre: nuevoNombre,
-      color: nuevoColor
+      nombre: nuevoNombre, color: nuevoColor
     });
   };
 
   const regenerarPartidosLiguilla = async () => {
-    if (!esAdmin || !window.confirm("¿Seguro? Se borrarán TODOS los resultados actuales para crear un nuevo calendario aleatorio.")) return;
+    if (!esAdmin || !window.confirm("¿Seguro? Se optimizarán los descansos y se borrarán resultados actuales.")) return;
 
-    const partidosSnapshot = await getDocs(collection(db, `torneos/${torneoActivoId}/partidos`));
-    const borrados = partidosSnapshot.docs.map(d => deleteDoc(doc(db, `torneos/${torneoActivoId}/partidos`, d.id)));
-    await Promise.all(borrados);
+    const snap = await getDocs(collection(db, `torneos/${torneoActivoId}/partidos`));
+    await Promise.all(snap.docs.map(d => deleteDoc(doc(db, `torneos/${torneoActivoId}/partidos`, d.id))));
 
     const n = equiposParticipantes.length;
     const usarGrupos = (n === 6 || n === 8);
     const idaYVuelta = datosTorneo.idaYVuelta;
 
-    let listaPartidos = [];
+    let lista = [];
     for (let i = 0; i < n; i++) {
       for (let j = i + 1; j < n; j++) {
         const mismoGrupo = usarGrupos ? (equiposParticipantes[i].grupo === equiposParticipantes[j].grupo) : true;
         if (mismoGrupo) {
-          listaPartidos.push({ equipoA: equiposParticipantes[i].id, equipoB: equiposParticipantes[j].id, tipo: "liguilla", nombrePartido: idaYVuelta ? "LIGUILLA (IDA)" : "LIGUILLA" });
-          if (idaYVuelta) {
-            listaPartidos.push({ equipoA: equiposParticipantes[j].id, equipoB: equiposParticipantes[i].id, tipo: "liguilla", nombrePartido: "LIGUILLA (VUELTA)" });
-          }
+          lista.push({ equipoA: equiposParticipantes[i].id, equipoB: equiposParticipantes[j].id, tipo: "liguilla", nombrePartido: "LIGUILLA" });
+          if (idaYVuelta) lista.push({ equipoA: equiposParticipantes[j].id, equipoB: equiposParticipantes[i].id, tipo: "liguilla", nombrePartido: "LIGUILLA (V)" });
         }
       }
     }
 
-    const mezclados = mezclarArray(listaPartidos);
-    for (let index = 0; index < mezclados.length; index++) {
+    const finalOrdenados = mezclarConDescanso(lista);
+    for (let index = 0; index < finalOrdenados.length; index++) {
       await addDoc(collection(db, `torneos/${torneoActivoId}/partidos`), {
-        ...mezclados[index], golesA: 0, golesB: 0, detallesGoles: [], finalizado: false, orden: index
+        ...finalOrdenados[index], golesA: 0, golesB: 0, detallesGoles: [], finalizado: false, orden: index
       });
     }
-    alert("Calendario regenerado.");
+    alert("Calendario optimizado generado.");
   };
 
-  const manejarCreacionTorneo = async (datos) => {
-    if (!esAdmin) return;
-    const { nombreTorneo, fechaTorneo, horaTorneo, lugarTorneo, tiemposForm, equiposForm, idaYVuelta } = datos;
-    const n = equiposForm.length;
-
-    const torneoRef = await addDoc(collection(db, "torneos"), {
-      nombre: nombreTorneo, fecha: fechaTorneo, hora: horaTorneo, lugar: lugarTorneo,
-      estado: "liguilla", campeon: "", tiempos: tiemposForm, iniciado: false,
-      numEquipos: n, idaYVuelta: idaYVuelta || false
-    });
-
-    const usarGrupos = (n === 6 || n === 8);
-    const mitad = n / 2;
-
-    for (let i = 0; i < n; i++) {
-      const grupo = usarGrupos ? (i < mitad ? "A" : "B") : null;
-      await setDoc(doc(db, `torneos/${torneoRef.id}/equipos_participantes`, equiposForm[i].id), {
-        nombre: equiposForm[i].nombre, color: equiposForm[i].color, jugadores: [], grupo: grupo
-      });
-    }
-
-    // Generación inicial (reutiliza lógica similar a regenerar)
-    alert("Torneo creado con éxito");
-    setTorneoActivoId(torneoRef.id);
-    setVista("torneo_en_curso");
-    // Nota: Aquí faltaría llamar a una función que genere los partidos iniciales o incluir la lógica
-  };
+  // --- BOTONES DE FASE FINAL (A IMPLEMENTAR LÓGICA SEGÚN CLASIFICACIÓN) ---
+  const generarSemis = () => alert("Lógica para Semifinales: Toma los 2 mejores de cada grupo o los 4 mejores.");
+  const generarFinal = () => alert("Lógica para Final: Toma los ganadores de Semis.");
 
   const moverPartido = async (indexActual, direccion) => {
     if (!esAdmin) return;
-
     const nuevoIndex = indexActual + direccion;
-    if (nuevoIndex < 0 || nuevoIndex >= partidos.length) return; // Fuera de límites
-
-    const partidoA = partidos[indexActual];
-    const partidoB = partidos[nuevoIndex];
-
-    // Intercambiamos los valores de "orden" en la base de datos
-    try {
-      await updateDoc(doc(db, `torneos/${torneoActivoId}/partidos`, partidoA.id), { orden: nuevoIndex });
-      await updateDoc(doc(db, `torneos/${torneoActivoId}/partidos`, partidoB.id), { orden: indexActual });
-    } catch (error) {
-      console.error("Error al reordenar:", error);
-    }
+    if (nuevoIndex < 0 || nuevoIndex >= partidos.length) return;
+    const pA = partidos[indexActual];
+    const pB = partidos[nuevoIndex];
+    await updateDoc(doc(db, `torneos/${torneoActivoId}/partidos`, pA.id), { orden: nuevoIndex });
+    await updateDoc(doc(db, `torneos/${torneoActivoId}/partidos`, pB.id), { orden: indexActual });
   };
 
-  // --- OTROS MÉTODOS (IGUALES A TU VERSIÓN PERO MANTENIDOS) ---
   const actualizarDatosTorneo = async (campo, valor) => {
     if (!esAdmin || !torneoActivoId) return;
     await updateDoc(doc(db, "torneos", torneoActivoId), { [campo]: valor });
@@ -237,52 +222,34 @@ function App() {
     return (
       <div style={{ marginTop: "20px" }}>
         <h3 className="section-title">{titulo}</h3>
-        {filtrados.map((p, index) => (
-          <div key={p.id} className="match-card-wrapper" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-
-            {/* Controles de Orden (Solo Admin) */}
-            {esAdmin && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                <button
-                  onClick={(e) => { e.stopPropagation(); moverPartido(partidos.indexOf(p), -1); }}
-                  style={{ background: '#eee', border: '1px solid #ccc', borderRadius: '4px', padding: '2px 5px', cursor: 'pointer', fontSize: '14px' }}
-                  disabled={partidos.indexOf(p) === 0}
-                >
-                  ▲
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); moverPartido(partidos.indexOf(p), 1); }}
-                  style={{ background: '#eee', border: '1px solid #ccc', borderRadius: '4px', padding: '2px 5px', cursor: 'pointer', fontSize: '14px' }}
-                  disabled={partidos.indexOf(p) === partidos.length - 1}
-                >
-                  ▼
-                </button>
-              </div>
-            )}
-
-            {/* Tarjeta del Partido */}
-            <div
-              onClick={() => { setModalPartido(p); resetCronometro(); }}
-              className="match-card-clickable"
-              style={{ flex: 1, opacity: p.finalizado ? 0.7 : 1, margin: 0 }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px", color: "#888", marginBottom: "5px" }}>
-                <span>{p.nombrePartido || "PARTIDO"}</span>
-                {p.finalizado && <span style={{ color: "green", fontWeight: "bold" }}>FINALIZADO</span>}
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span className="team-name">{equiposParticipantes.find((e) => e.id === p.equipoA)?.nombre}</span>
-                <span className="score-badge">{p.golesA} - {p.golesB}</span>
-                <span className="team-name" style={{ textAlign: "right" }}>{equiposParticipantes.find((e) => e.id === p.equipoB)?.nombre}</span>
+        {filtrados.map((p) => {
+          const idxGlobal = partidos.indexOf(p);
+          return (
+            <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+              {esAdmin && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <button onClick={() => moverPartido(idxGlobal, -1)} disabled={idxGlobal === 0} className="btn-orden">▲</button>
+                  <button onClick={() => moverPartido(idxGlobal, 1)} disabled={idxGlobal === partidos.length - 1} className="btn-orden">▼</button>
+                </div>
+              )}
+              <div onClick={() => { setModalPartido(p); resetCronometro(); }} className="match-card-clickable" style={{ flex: 1, margin: 0, opacity: p.finalizado ? 0.7 : 1 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px", color: "#888", marginBottom: "5px" }}>
+                  <span>{p.nombrePartido}</span>
+                  {p.finalizado && <span style={{ color: "green", fontWeight: "bold" }}>FINALIZADO</span>}
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span className="team-name">{equiposParticipantes.find(e => e.id === p.equipoA)?.nombre}</span>
+                  <span className="score-badge">{p.golesA} - {p.golesB}</span>
+                  <span className="team-name" style={{ textAlign: "right" }}>{equiposParticipantes.find(e => e.id === p.equipoB)?.nombre}</span>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     );
   };
 
-  // --- ESTILOS INLINE (REFORZADOS) ---
   const mainBtnStyle = { width: "100%", padding: "12px", border: "none", borderRadius: "8px", color: "#fff", fontWeight: "bold", cursor: "pointer" };
   const inputStyle = { width: "100%", padding: "10px", marginBottom: "10px", borderRadius: "6px", border: "1px solid #ccc", boxSizing: "border-box", color: "#333", background: "#fff" };
   const formCardStyle = { background: "#fff", padding: "15px", borderRadius: "12px", marginBottom: "15px", boxShadow: "0 2px 4px rgba(0,0,0,0.05)" };
@@ -318,8 +285,6 @@ function App() {
         <div style={{ textAlign: "center" }}>
           <h1 className="main-title">Torneo Manager</h1>
           {esAdmin && <button onClick={() => setVista("crear_torneo")} style={{ ...mainBtnStyle, background: "#4285f4" }}>➕ NUEVO TORNEO</button>}
-          <button onClick={() => setVista("estadisticas_globales")} style={{ ...mainBtnStyle, background: "#34a853", marginTop: "10px" }}>🌍 RANKING GLOBAL</button>
-
           <h3 className="section-title" style={{ textAlign: 'left', marginTop: '20px' }}>Historial</h3>
           {historial.map((t) => (
             <div key={t.id} onClick={() => { setTorneoActivoId(t.id); setVista("torneo_en_curso"); }} style={cardStyle}>
@@ -335,55 +300,53 @@ function App() {
       )}
 
       {vista === "crear_torneo" && (
-        <CrearTorneo alCrear={manejarCreacionTorneo} alCancelar={() => setVista("menu")} mainBtnStyle={mainBtnStyle} inputStyle={inputStyle} formCardStyle={formCardStyle} />
+        <CrearTorneo alCrear={(d) => { setVista("menu"); }} alCancelar={() => setVista("menu")} mainBtnStyle={mainBtnStyle} inputStyle={inputStyle} formCardStyle={formCardStyle} />
       )}
 
       {vista === "torneo_en_curso" && (
         <div>
           <button onClick={() => setVista("menu")} style={backBtnStyle}>← Volver</button>
 
-          {/* PANEL DE EDICIÓN ADMIN */}
           {esAdmin && datosTorneo.estado !== "finalizado" && (
             <div style={{ ...formCardStyle, background: "#e3f2fd", border: "1px solid #90caf9" }}>
               <h3 style={{ marginTop: 0, color: "#1565c0" }}>🛠️ Panel de Control</h3>
-              <input value={datosTorneo.nombre || ""} onChange={(e) => actualizarDatosTorneo("nombre", e.target.value)} style={inputStyle} placeholder="Nombre Torneo" />
-
-              <p style={{ fontSize: '11px', fontWeight: 'bold', margin: '10px 0 5px' }}>EQUIPOS Y COLORES:</p>
-              {equiposParticipantes.map(eq => (
-                <div key={eq.id} style={{ display: 'flex', gap: '5px', marginBottom: '5px' }}>
-                  <input value={eq.nombre} onChange={(e) => actualizarEquipo(eq.id, e.target.value, eq.color)} style={{ ...inputStyle, marginBottom: 0, flex: 1, fontSize: '12px' }} />
-                  <input type="color" value={eq.color} onChange={(e) => actualizarEquipo(eq.id, eq.nombre, e.target.value)} style={{ width: '40px', height: '35px' }} />
-                </div>
-              ))}
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '15px' }}>
-                <button onClick={regenerarPartidosLiguilla} style={{ ...mainBtnStyle, background: '#e67e22', fontSize: '11px' }}>🔄 REGENERAR CALENDARIO</button>
-                <button onClick={() => alert("Usa los botones de abajo para semis/final")} style={{ ...mainBtnStyle, background: '#9b59b6', fontSize: '11px' }}>🏆 FASE FINAL</button>
+              <input value={datosTorneo.nombre || ""} onChange={(e) => actualizarDatosTorneo("nombre", e.target.value)} style={inputStyle} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <button onClick={regenerarPartidosLiguilla} style={{ ...mainBtnStyle, background: '#e67e22', fontSize: '11px' }}>🔄 REGENERAR LIGUILLA</button>
+                <button onClick={generarSemis} style={{ ...mainBtnStyle, background: '#f39c12', fontSize: '11px' }}>⚔️ GENERAR SEMIS</button>
+                <button onClick={generarFinal} style={{ ...mainBtnStyle, background: '#9b59b6', fontSize: '11px', gridColumn: 'span 2' }}>🏆 GENERAR FINAL</button>
               </div>
             </div>
           )}
 
-          {/* ... Resto de la vista (Plantillas, Clasificación, Goleadores) ... */}
           <div style={formCardStyle}>
             <h3 className="section-title">👥 Plantillas y Pagos</h3>
-            {equiposParticipantes.map((eq) => (
-              <div key={eq.id} className="team-section">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <strong style={{ color: eq.color }}>{eq.nombre}</strong>
-                  {esAdmin && <button onClick={() => { const n = prompt("Nombre:"); if (n) añadirJugador(eq.id, n); }} className="btn-add-player">+ Jugador</button>}
-                </div>
-                {eq.jugadores?.map((j, i) => (
-                  <div key={i} className="player-row">
-                    <span>{j.nombre} {esAdmin && <button onClick={() => eliminarJugador(eq.id, i)} className="btn-del-mini">×</button>}</span>
-                    <button onClick={() => togglePagoRealtime(eq.id, i)} className={`btn-pago ${j.pagado ? 'pagado' : 'pendiente'}`}>{j.pagado ? "PAGADO" : "PENDIENTE"}</button>
+            {equiposParticipantes.map((eq) => {
+              const esClaro = eq.color?.toLowerCase() === "#ffffff" || eq.color?.toLowerCase() === "white";
+              return (
+                <div key={eq.id} className="team-section">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <strong style={{ 
+                      color: esClaro ? "#333" : eq.color, 
+                      background: esClaro ? "#eee" : "transparent",
+                      padding: esClaro ? "2px 5px" : "0",
+                      borderRadius: "4px"
+                    }}>{eq.nombre}</strong>
+                    {esAdmin && <button onClick={() => { const n = prompt("Nombre:"); if (n) añadirJugador(eq.id, n); }} className="btn-add-player">+ Jugador</button>}
                   </div>
-                ))}
-              </div>
-            ))}
+                  {eq.jugadores?.map((j, i) => (
+                    <div key={i} className="player-row">
+                      <span>{j.nombre} {esAdmin && <button onClick={() => eliminarJugador(eq.id, i)} className="btn-del-mini">×</button>}</span>
+                      <button onClick={() => togglePagoRealtime(eq.id, i)} className={`btn-pago ${j.pagado ? 'pagado' : 'pendiente'}`}>{j.pagado ? "PAGADO" : "PENDIENTE"}</button>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </div>
 
           <Clasificacion equipos={equiposParticipantes} partidos={partidos} />
-
+          
           <div style={formCardStyle}>
             <h3 className="section-title">🎯 Top Goleadores</h3>
             {goleadoresTorneo.slice(0, 5).map((g, i) => (
