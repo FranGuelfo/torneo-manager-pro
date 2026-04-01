@@ -80,7 +80,7 @@ function App() {
       for (let i = 0; i < copia.length; i++) {
         const p = copia[i];
         const coincidencia = ultimo && (
-          p.equipoA === ultimo.equipoA || p.equipoA === ultimo.equipoB || 
+          p.equipoA === ultimo.equipoA || p.equipoA === ultimo.equipoB ||
           p.equipoB === ultimo.equipoA || p.equipoB === ultimo.equipoB
         );
         if (!coincidencia) {
@@ -151,9 +151,86 @@ function App() {
     alert("Calendario optimizado generado.");
   };
 
-  // --- BOTONES DE FASE FINAL (A IMPLEMENTAR LÓGICA SEGÚN CLASIFICACIÓN) ---
-  const generarSemis = () => alert("Lógica para Semifinales: Toma los 2 mejores de cada grupo o los 4 mejores.");
-  const generarFinal = () => alert("Lógica para Final: Toma los ganadores de Semis.");
+  // --- LÓGICA AUTOMÁTICA DE FASE FINAL ---
+
+  const generarSemis = async () => {
+    if (!esAdmin || !window.confirm("¿Generar Semifinales basadas en la clasificación actual?")) return;
+
+    // 1. Obtenemos la clasificación actual (usando la misma lógica que tu componente Clasificacion)
+    // Nota: Esta lógica asume que ya tienes los puntos calculados o que los calculamos aquí rápido
+    const stats = equiposParticipantes.map(eq => {
+      let pts = 0;
+      partidos.filter(p => p.finalizado && p.tipo === "liguilla").forEach(p => {
+        if (p.equipoA === eq.id) {
+          if (p.golesA > p.golesB) pts += 3;
+          else if (p.golesA === p.golesB) pts += 1;
+        } else if (p.equipoB === eq.id) {
+          if (p.golesB > p.golesA) pts += 3;
+          else if (p.golesB === p.golesA) pts += 1;
+        }
+      });
+      return { ...eq, puntos: pts };
+    });
+
+    // Ordenamos por puntos
+    const ordenados = stats.sort((a, b) => b.puntos - a.puntos);
+
+    if (ordenados.length < 4) {
+      alert("Necesitas al menos 4 equipos para semis.");
+      return;
+    }
+
+    // 2. Creamos los emparejamientos (1º vs 4º y 2º vs 3º)
+    const semis = [
+      { a: ordenados[0], b: ordenados[3], nombre: "SEMIFINAL 1 (1º vs 4º)" },
+      { a: ordenados[1], b: ordenados[2], nombre: "SEMIFINAL 2 (2º vs 3º)" }
+    ];
+
+    for (let i = 0; i < semis.length; i++) {
+      await addDoc(collection(db, `torneos/${torneoActivoId}/partidos`), {
+        equipoA: semis[i].a.id,
+        equipoB: semis[i].b.id,
+        tipo: "semifinal",
+        nombrePartido: semis[i].nombre,
+        golesA: 0,
+        golesB: 0,
+        finalizado: false,
+        orden: partidos.length + i // Van al final de la lista
+      });
+    }
+
+    await actualizarDatosTorneo("estado", "semifinales");
+    alert("Semifinales generadas con éxito.");
+  };
+
+  const generarGranFinal = async () => {
+    if (!esAdmin) return;
+
+    // Buscamos las semis finalizadas para ver quién ganó
+    const semis = partidos.filter(p => p.tipo === "semifinal" && p.finalizado);
+
+    if (semis.length < 2) {
+      alert("Primero debes finalizar las dos semifinales.");
+      return;
+    }
+
+    const ganador1 = semis[0].golesA > semis[0].golesB ? semis[0].equipoA : semis[0].equipoB;
+    const ganador2 = semis[1].golesA > semis[1].golesB ? semis[1].equipoA : semis[1].equipoB;
+
+    await addDoc(collection(db, `torneos/${torneoActivoId}/partidos`), {
+      equipoA: ganador1,
+      equipoB: ganador2,
+      tipo: "final",
+      nombrePartido: "🏆 GRAN FINAL",
+      golesA: 0,
+      golesB: 0,
+      finalizado: false,
+      orden: partidos.length + 1
+    });
+
+    await actualizarDatosTorneo("estado", "final");
+    alert("¡La Gran Final ha sido generada!");
+  };
 
   const moverPartido = async (indexActual, direccion) => {
     if (!esAdmin) return;
@@ -326,8 +403,8 @@ function App() {
               return (
                 <div key={eq.id} className="team-section">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <strong style={{ 
-                      color: esClaro ? "#333" : eq.color, 
+                    <strong style={{
+                      color: esClaro ? "#333" : eq.color,
                       background: esClaro ? "#eee" : "transparent",
                       padding: esClaro ? "2px 5px" : "0",
                       borderRadius: "4px"
@@ -346,7 +423,7 @@ function App() {
           </div>
 
           <Clasificacion equipos={equiposParticipantes} partidos={partidos} />
-          
+
           <div style={formCardStyle}>
             <h3 className="section-title">🎯 Top Goleadores</h3>
             {goleadoresTorneo.slice(0, 5).map((g, i) => (
